@@ -1,30 +1,41 @@
-SeuratWrapper <- function(SeuratObjName, logExpData, Label, NewMeta){
+SeuratWrapper <- function(SeuratObjName, ExpData, Label, NewMeta, Normalize=T){
   
-  SeuratObjName <- CreateSeuratObject(raw.data = logExpData)
-  SeuratObjName <- FindVariableGenes(SeuratObjName, do.plot = F, display.progress = F)
-  SeuratObjName <- ScaleData(SeuratObjName)
-  SeuratObjName <- AddMetaData(SeuratObjName, NewMeta)
-  hv.genes <- head(rownames(SeuratObjName@hvg.info), 1000)
-  SeuratObjName <- RunPCA(SeuratObjName, 
+  SeuratObj <- CreateSeuratObject(raw.data = ExpData)
+  if (Normalize == TRUE) {
+    SeuratObj <- NormalizeData(object = SeuratObj)
+  }else{
+    print("Not normalizing the data.. Assuming the input is in TPM...")
+    }
+  SeuratObj <- FindVariableGenes(SeuratObj, do.plot = F, display.progress = F)
+  SeuratObj <- ScaleData(SeuratObj)
+  
+  if(!missing(NewMeta)){
+    #NewMeta=NewMeta
+    SeuratObj <- AddMetaData(SeuratObj, NewMeta)    
+  }else{
+    print("No new meta file is provided. Skipping...")
+  }
+  
+  
+  hv.genes <- head(rownames(SeuratObj@hvg.info), 1000)
+  SeuratObj <- RunPCA(SeuratObj, 
                               pc.genes = hv.genes, 
                               do.print = FALSE)
-  SeuratObjName <- FindClusters(SeuratObjName, 
+  SeuratObj <- FindClusters(SeuratObj, 
                                     reduction.type = "pca", 
                                     dims.use = 1:10, 
                                     resolution = 1, 
                                     print.output = FALSE, 
                                     save.SNN = TRUE,
                                     force.recalc = T)
-  SeuratObjName <- RunTSNE(SeuratObjName, dims.use = 1:10, do.fast = TRUE,check_duplicates = FALSE)
+  SeuratObj <- RunTSNE(SeuratObj, dims.use = 1:10, do.fast = TRUE,check_duplicates = FALSE)
   
   pdf(paste(Label,".plots.pdf",sep=""),width=8,height = 8)
-  PCAPlot(SeuratObjName, dim.1 = 1, dim.2 = 2)
-  PCElbowPlot(SeuratObjName)
-  TSNEPlot(SeuratObjName, do.label = TRUE)
-  TSNEPlot(SeuratObjName, do.label = TRUE,group.by ="tech")
+  PCAPlot(SeuratObj, dim.1 = 1, dim.2 = 2)
+  PCElbowPlot(SeuratObj)
+  TSNEPlot(SeuratObj, do.label = TRUE)
   dev.off()
-  
-  return(SeuratObjName)
+  assign(SeuratObjName, SeuratObj,envir=globalenv())
 }
 
 
@@ -79,12 +90,11 @@ selecteGenes.best.loadings <- function(trainingExpData, pcs, num, caption="Highe
 }
 
 
-prepareDataset <- function(ExpressionData, CellLabels, do.splitTest=FALSE, percent.Testset=0.2, regenerate.data=FALSE, run.name){
+prepareDataset <- function(ExpressionData, CellLabels, do.splitTest=FALSE, percent.Testset=0.2, regenerate.data=FALSE, run.name, plotStats=FALSE, featureGeneSet){
   #Required: This will take a Normalized expression data matrix, rows as genes and columns as cells. Example: as.matrix(SeuratObject@data)
   #Required: A list of cell labels. same dimension as colnames(input expression). Example: SeuratObject@meta.data$res.1
   #This will have an option to split data into test and training datasets. Default is, 0.2, 20%.
   #Default percent for test is the 20% of the whole data.
-  
   
   #Transpose the matrix cols <--> rows t()
   #Keep the data in matrix form, otherwise randomForest will throw error: 'Error: protect(): protection stack overflow'
@@ -95,14 +105,10 @@ prepareDataset <- function(ExpressionData, CellLabels, do.splitTest=FALSE, perce
   #Convert categorical variables to factors, otherwise, it will throw error: 'Error in y - ymean : non-numeric argument to binary operator'
   trainingData$CellType <- factor(trainingData$CellType)
   
-  
   tsub <- trainingData[,!(names(trainingData) %in% c("CellType"))]
   tsub <- droplevels(tsub)
   indx <- sapply(tsub, is.factor)
   tsub[indx] <- lapply(tsub[indx], function(x) as.numeric(as.character(x)))
-  
-  #trainingData <- cbind(tsub, trainingData[,"CellType"])
-  #tmat <- as.matrix(trainingData)
   
   gc()
   options("expression" =500000)
@@ -125,16 +131,20 @@ prepareDataset <- function(ExpressionData, CellLabels, do.splitTest=FALSE, perce
     train <- tsub[train_ind, ]
     
     save(trainingData, file=paste(run.name,".trainingData.tmp.Rdata",sep = ""))
-    #save(tsub,file="tsub.tmp.Rdata")
     rm(trainingData, tsub)
+    
+    if(missing(featureGeneSet)){
     #Perform PCA on data (optional: only on training portion) and select genes for features
-    pca.genes <- as.character(selecteGenes.best.loadings(train,10,500))
+    pca.genes <- as.character(selecteGenes.best.loadings(train,10,2000))
+    }else{
+      pca.genes <- make.names(featureGeneSet)
+    }
+      
     
     load(paste(run.name,".trainingData.tmp.Rdata",sep = ""))
     trainingData.postPCA <- trainingData[train_ind,c(pca.genes,"CellType")]
     trainingData.postPCA <- droplevels(trainingData.postPCA)
     
-    #test <- tsub[-train_ind, pca.genes]
     test <- trainingData[-train_ind,c(pca.genes,"CellType")]
     #save the test dataset
     save(test, file=paste(run.name,".testing.data",sep = ""))
@@ -143,55 +153,173 @@ prepareDataset <- function(ExpressionData, CellLabels, do.splitTest=FALSE, perce
       train <- tsub
       print("Not splitting data for test set...")
       save(trainingData, file=paste(run.name,".trainingData.tmp.Rdata",sep = ""))
-      #save(tsub,file="tsub.tmp.Rdata")
       rm(trainingData, tsub)
+      
+      if(missing(featureGeneSet)){
       #Perform PCA on data (optional: only on training portion) and select genes for features
       pca.genes <- as.character(selecteGenes.best.loadings(train,10,2000))
+      }else{
+        pca.genes <- make.names(featureGeneSet)
+      }
+      print(length(pca.genes))
       load(paste(run.name,".trainingData.tmp.Rdata",sep = ""))
       trainingData.postPCA <- trainingData[,c(pca.genes,"CellType")]
       trainingData.postPCA <- droplevels(trainingData.postPCA)
       
     }#closes the do.splitTest
-  #save(train, file="Training.data")
-  
-  #Subset the data for selected genes.
-  #trainfiltered <- train[, pca.genes]
-  #trainingData=input data
-  #trainingData.postPCA <- data.frame(trainfiltered, CellType=trainingData[rownames(trainfiltered),"CellType"])
+
   save(trainingData.postPCA, file=paste(run.name,".trainingData.postPCA.data",sep = ""))
+  file.remove(paste(run.name,".trainingData.tmp.Rdata",sep = ""))
+  
+  if(plotStats == TRUE){
+    print("Calculating stats...")
+    
+  }else{
+    print("Skipping plots for stats...")
+  }
   
 }#closes the function
 
 CellTyperTrainer <- function(trainingData, run.name){
   library(randomForest)
   modelname <- paste(run.name, "_rf",sep = "")
-  modelname = randomForest(CellType~., data = trainingData, norm.votes = TRUE,importance=TRUE, proximity = TRUE, ntree=500)
+  #Added: "sampsize=c(table(trainingData$CellType))". Revisit this later to make sure it is working as expected...
+  modelname = randomForest(CellType~., data = trainingData, norm.votes = TRUE, importance=TRUE, proximity = TRUE, ntree=500, sampsize=c(table(trainingData$CellType)))
   save(modelname, file=paste(run.name,".RF_model.Robj",sep = ""))
-  print(rf)
+  print(modelname)
+  #varImpPlot(model, sort = T, n.var=20,main="Top 10 - Variable Importance")
 }
 
-CellTyper <- function(testSet, model){
+
+
+bestScoreExtractor <- function(PredictionsTable){
+  scoreslist <- NULL;
+  for (i in 1:length(PredictionsTable[,1])){
+    bestscore <- PredictionsTable[i, (names(PredictionsTable) == PredictionsTable[i,]$Prediction)]
+    scoreslist <- rbind(scoreslist, bestscore)
+  }
+  rownames(scoreslist) <- rownames(PredictionsTable)
+  colnames(scoreslist) <- "BestVotesPercent"
+  scoreslist <- as.data.frame(scoreslist)
+  #assign("bestscoresList", scoreslist, envir = globalenv())
+  return(scoreslist)
+}
+
+
+
+CellTyper <- function(SeuratObject, testExpSet, model, priorLabels){
+  
   library(caret)
   library(randomForest)
-  pred.test.prob <- predict(model, testSet, type = "prob")
+  
+  if(!missing(SeuratObject)){
+    testExpSet <- t(as.matrix(SeuratObject@data))
+  }else{
+    print("Expression matrix is provided...")
+  }#Closes missing(SeuratObj)
+  colnames(testExpSet) <- make.names(colnames(testExpSet))
+  #Prepare Test Expression set
+  testsub <- testExpSet[,which(colnames(testExpSet) %in% attributes(model$terms)$term.labels)]
+  missingGenes <- attributes(model$terms)$term.labels[which(!attributes(model$terms)$term.labels %in% colnames(testExpSet))]
+  print(missingGenes)
+  missingGenes.df <- data.frame(matrix(0, ncol = length(missingGenes), nrow = length(rownames(testExpSet))))
+  colnames(missingGenes.df) <- missingGenes
+  TestData <- cbind(testsub, missingGenes.df)
+  TestData <- TestData[,attributes(model$terms)$term.labels]
+  cat("Number of Features (genes) to be considered is", length(colnames(testsub)), '\n', "Number of missing Features set to zero is", length(missingGenes), '\n', sep = ' ')
+  
+  rm(testsub, missingGenes, missingGenes.df)
+  gc()
+  
+  #Predict
+  pred.test.prob <- predict(model, TestData, type = "prob")
   pred.test.prob <- as.data.frame(pred.test.prob)
   
-  pred.test.out <- predict(model, testSet, type="response")
+  pred.test.out <- predict(model, TestData, type="response")
   
   testPred <- pred.test.prob
-  testPred$Prior <- testSet$CellType
   
   testPred$Prediction <- pred.test.out
   
-  confmat <- confusionMatrix(testPred$Prediction, testPred$Prior)
-  confmat$table
+  if(missing(priorLabels)){
+    print("Prior class labels are not provided!")
+    
+  }else{
+    #Provided prior class labels (priorLabels) has to be a dataframe with same rownames as input testExpSet with one column storing labels.
+    colnames(priorLabels) <- c("Prior")
+    testPred <- cbind(testPred, priorLabels)
+    
+    confmat <- confusionMatrix(data = testPred$Prediction, reference = testPred$Prior)
+    print(confmat$table)
+    if(!missing(SeuratObject)){
+      attributes(SeuratObject)$confusionMatrix <- confmat$table
+    }else{
+      print("Prediction output is being exported ...")
+    }#Closes missing(SeuratObj)
+    #assign("ConfusionMatrix", confmat$table, envir=globalenv())
+  }
+
+  if(!missing(SeuratObject)){
+    #testPred$BestVotesPercent <- bestScoreExtractor(testPred)
+    testPred <- cbind(testPred,bestScoreExtractor(testPred))
+    SeuratObject@meta.data <- SeuratObject@meta.data[,which(!colnames(SeuratObject@meta.data) %in% colnames(testPred))]
+    SeuratObject@meta.data <- cbind(SeuratObject@meta.data, testPred)
+    return(SeuratObject)
+  }else{
+    print("Prediction output is being exported ...")
+    return(testPred)
+  }#Closes missing(SeuratObj)
+}#closes the function
+
+
+PlotPredictions <- function(SeuratObject, model, save.pdf=T, outputFilename="plotpredictions"){
+  pdf(paste(outputFilename,".pdf",sep=""),width= 10,height = 10)
+  FeaturePlot(object = SeuratObject, 
+              features.plot = model$classes, 
+              cols.use = c("grey", "blue"), 
+              reduction.use = "tsne")
+  TSNEPlot(SeuratObject, group.by="Prediction",do.label=T)
+  FeaturePlot(SeuratObject, features.plot = "BestVotesPercent")
+  require(gridExtra)
+  p1 <- ggplot(data=SeuratObject@meta.data,aes(x=Prediction,y=BestVotesPercent,color=Prediction))+
+    geom_violin()+ theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  p2 <- ggplot(data=SeuratObject@meta.data,aes(x=Prediction,fill=Prediction))+
+    geom_histogram(stat = "count")+theme(axis.text.x = element_text(angle = 90, hjust = 1),legend.position="right")
+  grid.arrange(p1, p2, nrow=2)
+  dev.off()
+}
+
+SeuratCCAmerger <- function(listofObjects){
+  # Determine genes to use for CCA, must be highly variable in at least 2 datasets
+  #ob.list <- list(zeisel, romanov, tasic, marques)
+  ob.list <- listofObjects
+  genesuse <- c()
+  ids=NULL
+  for (i in 1:length(ob.list)) {
+    genesuse <- c(genesuse, head(rownames(ob.list[[i]]@hvg.info), 1000))
+    ob.list[[i]]@meta.data$dataSource <- paste("id",i,sep="")
+    ids <- c(ids, paste("id",i,sep=""))
+  }
+  genesuse <- names(which(table(genesuse) > 1))
+  for (i in 1:length(ob.list)) {
+    genesuse <- genesuse[genesuse %in% rownames(ob.list[[i]]@scale.data)]
+  }
   
-  print(  
-    confusionMatrix(data = testPred$Prediction,  
-                    reference = testPred$Prior))
-  
-  model$confusion[,"class.error"]
-  
-  varImpPlot(model, sort = T, n.var=20,main="Top 10 - Variable Importance")
-  return(testPred)
+  if(length(ob.list) > 2){
+    # Run multi-set CCA
+    integrated <- RunMultiCCA(ob.list, genes.use = genesuse, num.ccs = 15, add.cell.ids = ids)
+    # Run rare non-overlapping filtering
+    integrated <- CalcVarExpRatio(object = integrated, reduction.type = "pca", dims.use = 1:10, grouping.var = "dataSource")
+    integrated <- SubsetData(integrated, subset.name = "var.ratio.pca", accept.low = 0.5)
+  }else{
+    #integrated <- RunCCA(object = ob.list[[1]], object2 = ob.list[[2]], genes.use = genesuse, num.cc = 15, add.cell.id = ids)
+    integrated <- RunCCA(object = ob.list[[1]], object2 = ob.list[[2]], genes.use = genesuse, num.cc = 15)
+  }
+  # Alignment
+  integrated <- AlignSubspace(integrated, reduction.type = "cca", dims.align = 1:10, grouping.var = "dataSource")
+  # t-SNE and Clustering
+  integrated <- FindClusters(integrated, reduction.type = "cca.aligned", dims.use = 1:10, save.SNN = T, resolution = 0.4)
+  integrated <- RunTSNE(integrated, reduction.use = "cca.aligned", dims.use = 1:10)
+  save(integrated, file="integrated.Aligned.seurat.Robj")
+  return(integrated)
 }
