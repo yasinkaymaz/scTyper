@@ -249,6 +249,45 @@ pbmc4K_CR.2.1.0 <- CellTyper(SeuratObject = pbmc4K_CR.2.1.0, model = rf.strata)
 
 PlotPredictions(SeuratObject = pbmc4K_CR.2.1.0, model = rf, save.pdf = T,outputFilename = paste(run.name,"PBMC4k.Predictions",sep = ""))
 
+#merge two datasets
+ob.list <- list(pbmc, pbmc4K_CR.2.1.0, pbmc8K_CR.2.1.0)
+ob.list <- list(pbmc, pbmc4K_CR.2.1.0)
+pbmc7K.integrated <- SeuratCCAmerger(listofObjects = ob.list)
+
+# Visualization
+TSNEPlot(pbmc7K.integrated, do.label = T)
+TSNEPlot(pbmc7K.integrated, do.label = T, group.by ="dataSource")
+
+head(pbmc7K.integrated@meta.data)
+pbmc7K.integrated <- CellTyper(SeuratObject = pbmc7K.integrated, model = rf.strata)
+
+PlotPredictions(SeuratObject = pbmc7K.integrated, model = rf.strata, outputFilename = "PBMC7k.Predictions")
+
+datas <- c(
+  "pbmc33K_CR.1.1.0"
+)
+
+for (d in datas){
+  print(d)
+  exp.data <- Read10X(data.dir = paste(dir,d,"/filtered_gene_bc_matrices/hg19/",sep = ""))
+  SeuratWrapper(d, exp.data, Normalize = T, Label = d)
+  rm(exp.data)
+}
+
+pbmc6K_CR.1.1.0@meta.data
+TSNEPlot(pbmc6K_CR.1.1.0, do.label = T)
+
+pbmc6K_CR.1.1.0 <- CellTyper(SeuratObject = pbmc6K_CR.1.1.0, model = rf.strata)
+
+PlotPredictions(SeuratObject = pbmc6K_CR.1.1.0, model = rf.strata, outputFilename = "pbmc6K_CR.1.1.0.Predictions")
+
+
+
+
+
+
+
+
 
 
 
