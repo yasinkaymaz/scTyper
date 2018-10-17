@@ -5,7 +5,7 @@ library(Seurat)
 setwd("/n/home13/yasinkaymaz/codes/test/brainCellMarkers/")
 #Load multiple PBMC datasets
 
-dir='/n/home13/yasinkaymaz/codes/test/brainCellMarkers/Datasets'
+dir='/n/home13/yasinkaymaz/codes/test/brainCellMarkers/Datasets/'
 
 datasets <- c(
   "pbmc4K_CR.2.1.0",
