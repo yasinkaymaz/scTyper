@@ -13,7 +13,17 @@ datasets <- c(
   "pbmc33K_CR.1.1.0",
   "pbmc3K_CR.1.1.0",
   "pbmc68K_CR.1.0.0",
-  "pbmc6K_CR.1.1.0"
+  "pbmc6K_CR.1.1.0",
+  "CD14posMonocytes",
+  "CD19posBCells",
+  "CD34posCells",
+  "CD4posHelperTCells",
+  "CD4posCD25posRegulatoryTCells",
+  "CD4posCD45RAposCD25negNaiveTcells",
+  "CD4posCD45ROposMemoryTCells",
+  "CD56posNaturalKillerCells",
+  "CD8posCytotoxicTcells",
+  "CD8posCD45RAposNaiveCytotoxicTCells"
 )
 
 for (d in datasets){
@@ -52,5 +62,44 @@ pbmc122K.integrated <- SeuratCCAmerger(listofObjects = ob.list)
 pbmc122K.integrated <- CellTyper(SeuratObject = pbmc122K.integrated, model = rf.strata)
 
 PlotPredictions(SeuratObject = pbmc122K.integrated, model = rf.strata, outputFilename = "PBMC122k.Predictions")
+
+save(pbmc122K.integrated, file="pbmc122K.integrated.seurat.Robj")
+
+rm(ob.list, sampleClassdata, trainingData.postPCA, )
+
+gc()
+
+oblist <- list(pbmc4K_CR.2.1.0, pbmc8K_CR.2.1.0, pbmc33K_CR.1.1.0, pbmc3K_CR.1.1.0, pbmc68K_CR.1.0.0, pbmc6K_CR.1.1.0, CD14posMonocytes, CD19posBCells, CD34posCells, CD4posHelperTCells, CD4posCD25posRegulatoryTCells, CD4posCD45RAposCD25negNaiveTcells, 
+               CD4posCD45ROposMemoryTCells, CD56posNaturalKillerCells, CD8posCytotoxicTcells, CD8posCD45RAposNaiveCytotoxicTCells)
+
+for(i in 1:length(oblist)){
+  if(i == 1){
+    merged <- oblist[[i]]
+  }else{
+    merged <- MergeSeurat(object1 = merged, object2 = oblist[[i]], add.cell.id1 = "merged1", add.cell.id2 = "merged2")
+  }
+}
+
+rm(oblist, pbmc4K_CR.2.1.0, pbmc8K_CR.2.1.0, pbmc33K_CR.1.1.0, pbmc3K_CR.1.1.0, pbmc68K_CR.1.0.0, pbmc6K_CR.1.1.0, CD14posMonocytes, CD19posBCells, CD34posCells, CD4posHelperTCells, CD4posCD25posRegulatoryTCells, CD4posCD45RAposCD25negNaiveTcells,
+               CD4posCD45ROposMemoryTCells, CD56posNaturalKillerCells, CD8posCytotoxicTcells, CD8posCD45RAposNaiveCytotoxicTCells )
+
+gc()
+
+merged <- FindVariableGenes(merged, do.plot = F, display.progress = F)
+hv.genes <- head(rownames(merged@hvg.info), 1000)
+merged <- ScaleData(merged)
+
+merged <- RunPCA(merged, 
+                    pc.genes = hv.genes, 
+                    do.print = FALSE)
+merged <- FindClusters(merged, 
+                          reduction.type = "pca", 
+                          dims.use = 1:10, 
+                          resolution = 1, 
+                          print.output = FALSE, 
+                          save.SNN = TRUE,
+                          force.recalc = T)
+merged <- RunTSNE(merged, dims.use = 1:10, do.fast = TRUE,check_duplicates = FALSE)
+save(merged, file="merged.seurat.objects.Robj")
 
 
