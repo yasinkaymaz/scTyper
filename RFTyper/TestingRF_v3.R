@@ -294,8 +294,6 @@ PlotPredictions(SeuratObject = pbmc6K_CR.1.1.0, model = rf.strata, outputFilenam
 
 
 
-
-
 library(randomForest)
 library(AUC)
 

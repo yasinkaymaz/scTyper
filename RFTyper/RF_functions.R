@@ -273,19 +273,40 @@ CellTyper <- function(SeuratObject, testExpSet, model, priorLabels){
 
 
 PlotPredictions <- function(SeuratObject, model, save.pdf=T, outputFilename="plotpredictions"){
+  #Evaluate model prediction accuracy:
+  conf.mat <- model$confusion %>% as.data.frame() %>% select(-class.error)
+  conf.mat <- reshape2::melt(as.matrix(conf.mat)) %>% as.tibble() %>% group_by(Var1) %>%
+    mutate(freq = 100*value/sum(value))
+  
   pdf(paste(outputFilename,".pdf",sep=""),width= 10,height = 10)
+  
   FeaturePlot(object = SeuratObject, 
               features.plot = model$classes, 
               cols.use = c("grey", "blue"), 
               reduction.use = "tsne")
+  
   TSNEPlot(SeuratObject, group.by="Prediction",do.label=T)
+  
   FeaturePlot(SeuratObject, features.plot = "BestVotesPercent")
+  
+  plt1 <- ggplot(conf.mat, aes(Var1, Var2, fill=freq)) +geom_tile(color = "white")+
+    scale_fill_gradient2(low = "white", high = "red", name="% Predictions")+
+    theme(axis.text.x = element_text(angle = 90))+
+    scale_y_discrete(name ="Predicted Cell Types")+
+    scale_x_discrete(name ="Cell Types")
+  
+  
+  
   require(gridExtra)
+  
   p1 <- ggplot(data=SeuratObject@meta.data,aes(x=Prediction,y=BestVotesPercent,color=Prediction))+
     geom_violin()+ theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  
   p2 <- ggplot(data=SeuratObject@meta.data,aes(x=Prediction,fill=Prediction))+
     geom_histogram(stat = "count")+theme(axis.text.x = element_text(angle = 90, hjust = 1),legend.position="right")
-  grid.arrange(p1, p2, nrow=2)
+  
+  grid.arrange(p1, p2, plt1,nrow=3)
+  
   dev.off()
 }
 
