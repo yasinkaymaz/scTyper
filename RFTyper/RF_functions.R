@@ -35,7 +35,9 @@ SeuratWrapper <- function(SeuratObjName, ExpData, Label, NewMeta, Normalize=T){
   PCElbowPlot(SeuratObj)
   TSNEPlot(SeuratObj, do.label = TRUE)
   dev.off()
+  filename=paste(SeuratObjName,".seurat.Robj",sep="")
   assign(SeuratObjName, SeuratObj,envir=globalenv())
+  save(SeuratObjName, file=filename)
 }
 
 
